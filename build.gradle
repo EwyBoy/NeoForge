@@ -192,7 +192,7 @@ subprojects {
                     licenses {
                         license {
                             name = 'LGPL 2.1'
-                            url = 'https://github.com/NeoForged/NeoForge/blob/1.13-pre/LICENSE.txt'
+                            url = 'https://github.com/neoforged/NeoForge/blob/1.20.x/LICENSE.txt'
                             distribution = 'repo'
                         }
                     }
