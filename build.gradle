@@ -67,7 +67,7 @@ ext {
     SLF4J_API_VERSION = '1.8.0-beta4'
     APACHE_MAVEN_ARTIFACT_VERSION = '3.8.5'
     JARJAR_VERSION = '0.3.19'
-    FANCY_MOD_LOADER_VERSION = '47.1.40'
+    FANCY_MOD_LOADER_VERSION = '47.1.41'
 
     // These versions should be kept in sync with the version manifest JSON
     // To use a version newer than the version manifest JSON, the dependency must be added to the installer configuration
@@ -99,6 +99,11 @@ def extraTxts = [
     rootProject.file('LICENSE.txt'),
     rootProject.tasks.createChangelog.outputFile
 ]
+
+tasks.register('failGitChanges', FailGitChanges) {
+    group = 'verification'
+    description = 'Fails the build if there are any uncommitted Git changes'
+}
 
 task downloadVersionManifest(type: Download) {
     src 'https://piston-meta.mojang.com/mc/game/version_manifest_v2.json'
@@ -325,6 +330,10 @@ project(':forge') {
         }
 
         api.extendsFrom(gameLayerLibrary, pluginLayerLibrary, installer)
+        apiResolvable {
+            extendsFrom api
+            canBeResolved = true
+        }
     }
 
     dependencies {
@@ -514,32 +523,6 @@ project(':forge') {
                             '--mod', 'structure_modifiers_test',
                             '--mod', 'custom_preset_editor_test',
                             '--output', rootProject.file('src/generated_test/resources/'),
-                            '--existing', sourceSets.main.resources.srcDirs[0],
-                            '--existing', sourceSets.test.resources.srcDirs[0]
-                }
-            }
-
-            forge_mdk_data {
-                parent runs.forge_data
-                taskName 'forge_mdk_data'
-
-                environment 'MOD_CLASSES', 'dummy' // Needed to work around FG limitation, FG will replace this!
-
-                ideaModule "${rootProject.name}.${project.name}.test"
-
-                mods {
-                    tests { sources sourceSets.test }
-                }
-
-                afterEvaluate {
-                    // Clear forge's main datagen args
-                    args.removeAll {
-                        forgeDataArgs.contains(it instanceof File ? (it as File).absolutePath : it.toString())
-                    }
-
-                    args '--flat', '--all', '--validate',
-                            '--mod', 'mdk_datagen',
-                            '--output', rootProject.file('src/generated_mdk/resources/'),
                             '--existing', sourceSets.main.resources.srcDirs[0],
                             '--existing', sourceSets.test.resources.srcDirs[0]
                 }
@@ -953,7 +936,7 @@ project(':forge') {
         inputJars.from(baseForgeVersionProperty.map { inputVersion ->
             def output = project.layout.buildDirectory.dir(name).map { it.file("forge-${inputVersion}-universal.jar") }.get().asFile
             project.rootProject.extensions.download.run {
-                src "https://maven.neoforged.net/releases/net/minecraftforge/forge/${inputVersion}/forge-${inputVersion}-universal.jar"
+                src "https://maven.neoforged.net/releases/net/neoforged/forge/${inputVersion}/forge-${inputVersion}-universal.jar"
                 dest output
             }
             return output
@@ -970,7 +953,7 @@ project(':forge') {
         inputJar = project.tasks.named('reobfJar').flatMap { it.output }
 
         commonLibraries.from(project.configurations.minecraftImplementation)
-        commonLibraries.from(project.configurations.api)
+        commonLibraries.from(project.configurations.apiResolvable)
         commonLibraries.from(project.configurations.moduleonly)
     }
 
@@ -1257,42 +1240,6 @@ project(':forge') {
         }
     }
 
-    task makeMdk(type: Zip) {
-        archiveBaseName = project.name
-        archiveClassifier = 'mdk'
-        archiveVersion = project.version
-        destinationDirectory = file('build/libs')
-
-        from rootProject.file('gradlew')
-        from rootProject.file('gradlew.bat')
-        from extraTxts
-        from(rootProject.file('gradle/')){
-            into('gradle/')
-        }
-        from(rootProject.file('mdk/')){
-            rootProject.file('mdk/gitignore.txt').eachLine{
-                if (!it.trim().isEmpty() && !it.trim().startsWith('#'))
-                    exclude it
-            }
-            filter(ReplaceTokens, tokens: [
-                FORGE_VERSION: FORGE_VERSION,
-                FORGE_GROUP: project.group,
-                FORGE_NAME: project.name,
-                MC_VERSION: MC_VERSION,
-                MAPPING_CHANNEL: MAPPING_CHANNEL,
-                MAPPING_VERSION: MAPPING_VERSION,
-                FORGE_SPEC_VERSION: SPEC_VERSION.split("\\.")[0],
-                MC_NEXT_VERSION: MC_NEXT_VERSION
-            ])
-            rename 'gitignore\\.txt', '.gitignore'
-            rename 'gitattributes\\.txt', '.gitattributes'
-        }
-        from(rootProject.file('src/generated_mdk/resources/')) {
-            into('src/main/resources/')
-            exclude '**/.cache/'
-        }
-    }
-
     license {
         header = file("$rootDir/LICENSE-header.txt")
 
@@ -1310,7 +1257,7 @@ project(':forge') {
     }
 
     tasks.register('genAllData') {
-        dependsOn 'forge_data', 'forge_mdk_data', 'forge_test_data'
+        dependsOn 'forge_data', 'forge_test_data'
     }
 
     tasks.eclipse.dependsOn('genEclipseRuns')
@@ -1384,8 +1331,6 @@ project(':forge') {
             mavenJava(MavenPublication) {
                 artifact universalJar
                 artifact installerJar
-                //TODO: installer-win
-                artifact makeMdk
                 artifact userdevJar
                 artifact sourcesJar
             }
